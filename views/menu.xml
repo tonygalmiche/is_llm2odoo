@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ================================================ -->
+    <!-- Menu racine IA                                   -->
+    <!-- ================================================ -->
+    <menuitem id="is_llm_menu_root"
+              name="IA"
+              web_icon="is_llm2odoo,static/description/icon.png"
+              groups="is_llm2odoo.group_ia_recherche_generale"
+              sequence="309"/>
+
+    <!-- ================================================ -->
+    <!-- Menu Recherche générale                          -->
+    <!-- ================================================ -->
+    <menuitem id="is_llm_menu_search_general"
+              name="Recherche générale"
+              parent="is_llm_menu_root"
+              action="is_search_general_action"
+              groups="is_llm2odoo.group_ia_recherche_generale"
+              sequence="5"/>
+
+</odoo>
