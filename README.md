@@ -61,6 +61,12 @@ Deux groupes d'utilisateurs :
 - `requests`
 - `pdf2image` (optionnel, pour le support PDF en mode vision)
 
+## Installation
+
+```bash
+git clone -b 18.0 --single-branch https://github.com/tonygalmiche/is_llm2odoo.git
+```
+
 ## Licence
 
 LGPL-3
