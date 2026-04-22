@@ -24,15 +24,13 @@
                 <field name="temps_reponse"/>
                 <templates>
                     <t t-name="card">
-                        <div class="o_kanban_record_top mb-2">
-                            <div class="o_kanban_record_headings">
-                                <span t-if="record.model_id.raw_value"
-                                      class="badge rounded-pill"
-                                      t-attf-style="background-color: #{record.model_id.raw_value % 10 == 0 ? '#17a2b8' : record.model_id.raw_value % 10 == 1 ? '#28a745' : record.model_id.raw_value % 10 == 2 ? '#ffc107' : record.model_id.raw_value % 10 == 3 ? '#dc3545' : record.model_id.raw_value % 10 == 4 ? '#6f42c1' : record.model_id.raw_value % 10 == 5 ? '#fd7e14' : record.model_id.raw_value % 10 == 6 ? '#20c997' : record.model_id.raw_value % 10 == 7 ? '#e83e8c' : record.model_id.raw_value % 10 == 8 ? '#6610f2' : '#007bff'}; color: white; font-weight: bold;">
-                                    <field name="model_id"/>
-                                </span>
-                            </div>
-                            <div class="o_kanban_record_title" style="margin-left: auto;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span t-if="record.model_id.raw_value"
+                                  class="badge rounded-pill"
+                                  t-attf-style="background-color: #{record.model_id.raw_value % 10 == 0 ? '#17a2b8' : record.model_id.raw_value % 10 == 1 ? '#28a745' : record.model_id.raw_value % 10 == 2 ? '#ffc107' : record.model_id.raw_value % 10 == 3 ? '#dc3545' : record.model_id.raw_value % 10 == 4 ? '#6f42c1' : record.model_id.raw_value % 10 == 5 ? '#fd7e14' : record.model_id.raw_value % 10 == 6 ? '#20c997' : record.model_id.raw_value % 10 == 7 ? '#e83e8c' : record.model_id.raw_value % 10 == 8 ? '#6610f2' : '#007bff'}; color: white; font-weight: bold;">
+                                <field name="model_id"/>
+                            </span>
+                            <div>
                                 <button t-if="record.nb_results.raw_value"
                                         name="action_open_results"
                                         type="object"
