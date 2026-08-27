@@ -7,7 +7,7 @@
     "author"   : "Tony Galmiche / InfoSaône",
     "category" : "InfoSaône",
     'website': '',
-    'license': 'LGPL-3',
+    'license': 'AGPL-3',
     'depends': ['base', 'mail'],
     'data': [
         'security/is_vllm_groups.xml',
