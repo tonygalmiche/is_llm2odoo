@@ -93,6 +93,17 @@ class IsSearchGeneral(models.Model):
         readonly=True,
         copy=False,
     )
+    measure = fields.Char(
+        string='Mesure',
+        help="Champ numérique utilisé comme mesure pour les vues graphique et pivot. "
+             "Utiliser '__count' pour le nombre d'enregistrements. "
+             "Si vide et type de vue = graph/pivot, l'IA le déterminera.",
+    )
+    vllm_measure_response = fields.Text(
+        string='Réponse VLLM (mesure)',
+        readonly=True,
+        copy=False,
+    )
     filter_id = fields.Many2one(
         'ir.filters',
         string='Favori associé',
@@ -101,12 +112,46 @@ class IsSearchGeneral(models.Model):
         help="Lien vers le favori créé à partir de cette recherche.",
     )
 
+    @api.onchange('model_id')
+    def _onchange_model_id(self):
+        self.domain = False
+        self.group_by = False
+        self.measure = False
+        self.view_type = False
+        self.nb_results = 0
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
             if vals.get('name', 'Nouveau') == 'Nouveau':
                 vals['name'] = self.env['ir.sequence'].next_by_code('is.search.general') or 'Nouveau'
         return super().create(vals_list)
+
+    def read(self, fields=None, load='_classic_read'):
+        result = super().read(fields=fields, load=load)
+        if fields and 'domain' not in fields:
+            return result
+        for record in result:
+            domain_str = record.get('domain')
+            if not domain_str:
+                continue
+            # Récupérer le model_name depuis l'enregistrement ou la base
+            model_name = record.get('model_name')
+            if not model_name:
+                rec = self.browse(record['id'])
+                model_name = rec.model_name
+            if not model_name or model_name not in self.env:
+                continue
+            try:
+                domain = safe_eval(domain_str, {'datetime': datetime})
+                self.env[model_name].search_count(domain)
+            except Exception:
+                _logger.warning(
+                    "Domaine invalide pour is.search.general id=%s (modèle=%s) : %s",
+                    record['id'], model_name, domain_str,
+                )
+                record['domain'] = False
+        return result
 
     def _get_installed_models_list(self):
         """Retourne la liste des modèles installés avec leur description."""
@@ -185,7 +230,7 @@ class IsSearchGeneral(models.Model):
         self.ensure_one()
         models_list = self._get_installed_models_list()
         system_prompt = (
-            "Tu es un expert Odoo 18. On te donne une demande utilisateur et la liste des modèles Odoo installés. "
+            "Tu es un expert Odoo 20. On te donne une demande utilisateur et la liste des modèles Odoo installés. "
             "Tu dois identifier le modèle Odoo le plus pertinent pour répondre à la demande. "
             "Réponds UNIQUEMENT avec le nom technique du modèle (ex: account.move), sans aucune explication."
         )
@@ -204,7 +249,7 @@ class IsSearchGeneral(models.Model):
         self.ensure_one()
         fields_desc = self._get_model_fields_description(model_name)
         system_prompt = (
-            "Tu es un expert Odoo 18. Tu dois générer un domaine Odoo (domain) valide "
+            "Tu es un expert Odoo 20. Tu dois générer un domaine Odoo (domain) valide "
             "en format Python (liste de tuples). "
             "Réponds UNIQUEMENT avec le domaine entre ```python et ```, sans aucune explication. "
             "Un domaine Odoo est une liste de tuples (champ, opérateur, valeur). "
@@ -253,7 +298,7 @@ class IsSearchGeneral(models.Model):
         """Demande à VLLM d'identifier le type de vue le plus approprié pour la question."""
         self.ensure_one()
         system_prompt = (
-            "Tu es un expert Odoo 18. On te donne une demande utilisateur et tu dois déterminer "
+            "Tu es un expert Odoo 20. On te donne une demande utilisateur et tu dois déterminer "
             "le type de vue le plus approprié pour afficher les résultats. "
             "Tu as le choix entre : "
             "- 'list' : pour afficher une liste détaillée d'enregistrements "
@@ -270,30 +315,74 @@ class IsSearchGeneral(models.Model):
         result = vllm.vllm_send_prompt(prompt, system_prompt=system_prompt)
         return result
 
+    def _ask_vllm_for_measure(self, model_name):
+        """Demande à VLLM quelle mesure utiliser pour les vues graph/pivot."""
+        self.ensure_one()
+        fields_desc = self._get_model_fields_description(model_name)
+        system_prompt = (
+            "Tu es un expert Odoo 20. On te donne une demande utilisateur pour un graphique ou tableau croisé. "
+            "Tu dois déterminer la mesure (valeur affichée) la plus appropriée. "
+            "Règles : "
+            "- Si l'utilisateur veut un NOMBRE, un COMPTAGE ou une QUANTITÉ de références, réponds '__count'. "
+            "- Sinon, réponds avec le nom technique du champ numérique le plus pertinent. "
+            "- Ne réponds qu'avec le nom du champ (ex: dao_ca, __count, amount_total), sans aucune explication."
+        )
+        prompt = (
+            "Modèle Odoo : %s\n\n"
+            "Champs disponibles :\n%s\n\n"
+            "Demande de l'utilisateur :\n%s\n\n"
+            "Quel champ utiliser comme mesure ?"
+        ) % (model_name, fields_desc, self.question)
+        vllm = self.env['is.vllm']
+        return vllm.vllm_send_prompt(prompt, system_prompt=system_prompt)
+
     def _ask_vllm_for_group_by(self, model_name):
         """Demande à VLLM de déterminer le regroupement approprié pour les vues graph/pivot."""
         self.ensure_one()
         fields_desc = self._get_model_fields_description(model_name)
-        system_prompt = (
-            "Tu es un expert Odoo 18. On te donne une demande utilisateur pour un graphique ou tableau croisé. "
-            "Tu dois déterminer le champ de regroupement (group_by) le plus approprié. "
-            "Format pour les dates (très important) : "
-            "- 'create_date:year' pour regrouper par année "
-            "- 'create_date:quarter' pour regrouper par trimestre "
-            "- 'create_date:month' pour regrouper par mois "
-            "- 'create_date:week' pour regrouper par semaine "
-            "- 'create_date:day' pour regrouper par jour "
-            "Pour les autres champs (many2one, selection, etc.), utilise juste le nom du champ sans suffix. "
-            "Exemples : 'partner_id', 'state', 'user_id', etc. "
-            "Si aucun regroupement n'est nécessaire ou pertinent, réponds 'none'. "
-            "Réponds UNIQUEMENT avec le nom du champ de regroupement (ex: create_date:year), sans aucune explication."
-        )
-        prompt = (
-            "Modèle Odoo : %s\n\n"
-            "Champs disponibles dans ce modèle :\n%s\n\n"
-            "Demande de l'utilisateur :\n%s\n\n"
-            "Quel champ utiliser pour le regroupement (group_by) ?"
-        ) % (model_name, fields_desc, self.question)
+
+        if self.view_type == 'pivot':
+            system_prompt = (
+                "Tu es un expert Odoo 20. On te donne une demande utilisateur pour un tableau croisé (pivot). "
+                "Tu dois déterminer les champs de regroupement en LIGNES et en COLONNES. "
+                "Règles importantes : "
+                "- Les mots 'en ligne', 'par ligne', 'en lignes' indiquent le champ pour les LIGNES (row). "
+                "- Les mots 'en colonne', 'par colonne', 'en colonnes' indiquent le champ pour les COLONNES (col). "
+                "- Utilise uniquement des noms de champs existants dans le modèle fourni. "
+                "- Format pour les dates : 'champ:year', 'champ:month', 'champ:quarter'. "
+                "- Pour les autres champs (selection, many2one, char), utilise juste le nom du champ. "
+                "Réponds UNIQUEMENT sur deux lignes, exactement dans ce format (sans aucune explication) :\n"
+                "row: nom_du_champ_ligne\n"
+                "col: nom_du_champ_colonne"
+            )
+            prompt = (
+                "Modèle Odoo : %s\n\n"
+                "Champs disponibles dans ce modèle :\n%s\n\n"
+                "Demande de l'utilisateur :\n%s\n\n"
+                "Quels champs utiliser pour les lignes (row) et les colonnes (col) du tableau croisé ?"
+            ) % (model_name, fields_desc, self.question)
+        else:
+            system_prompt = (
+                "Tu es un expert Odoo 20. On te donne une demande utilisateur pour un graphique. "
+                "Tu dois déterminer le ou les champs de regroupement (group_by) les plus appropriés. "
+                "Format pour les dates (très important) : "
+                "- 'champ:year' pour regrouper par année "
+                "- 'champ:quarter' pour regrouper par trimestre "
+                "- 'champ:month' pour regrouper par mois "
+                "- 'champ:week' pour regrouper par semaine "
+                "- 'champ:day' pour regrouper par jour "
+                "Pour les autres champs (many2one, selection, char), utilise juste le nom du champ. "
+                "Si un seul regroupement, réponds avec un seul nom. "
+                "Si deux regroupements, sépare-les par une virgule (ex: dao_motif, dao_typeclient). "
+                "Si aucun regroupement n'est nécessaire, réponds 'none'. "
+                "Réponds UNIQUEMENT avec le(s) nom(s) de champ(s), sans aucune explication."
+            )
+            prompt = (
+                "Modèle Odoo : %s\n\n"
+                "Champs disponibles dans ce modèle :\n%s\n\n"
+                "Demande de l'utilisateur :\n%s\n\n"
+                "Quel(s) champ(s) utiliser pour le regroupement (group_by) ?"
+            ) % (model_name, fields_desc, self.question)
 
         vllm = self.env['is.vllm']
         result = vllm.vllm_send_prompt(prompt, system_prompt=system_prompt)
@@ -375,22 +464,51 @@ class IsSearchGeneral(models.Model):
                 if view_type in ('list', 'graph', 'pivot'):
                     self.view_type = view_type
                 else:
+                    # Par défaut, utiliser list
                     self.view_type = 'list'
             else:
+                # En cas d'erreur, utiliser list par défaut
                 self.view_type = 'list'
 
-        # Étape 4 : Déterminer le group_by si nécessaire (pour graph/pivot)
+        # Étape 4 : Déterminer la mesure si nécessaire (pour graph/pivot)
+        if self.view_type in ('graph', 'pivot') and not self.measure:
+            # Détection rapide par mots-clés avant d'interroger VLLM
+            question_lower = self.question.lower()
+            count_keywords = ['nombre', 'combien', 'comptage', 'count', 'quantité de', 'nb de', 'nb d\'', 'nombre de', 'nombre d\'']
+            if any(kw in question_lower for kw in count_keywords):
+                self.measure = '__count'
+            else:
+                result = self._ask_vllm_for_measure(model_name)
+                if result['success']:
+                    response = result['response'].strip()
+                    self.vllm_measure_response = response
+                    measure = response.split('\n')[0].strip().strip('`').strip().lower()
+                    if measure:
+                        self.measure = measure
+
+        # Étape 5 : Déterminer le group_by si nécessaire (pour graph/pivot)
         if self.view_type in ('graph', 'pivot') and not self.group_by:
             result = self._ask_vllm_for_group_by(model_name)
             if result['success']:
                 response = result['response'].strip()
                 self.vllm_group_by_response = response
-                group_by = response.split('\n')[0].strip().strip('`').strip().lower()
-                if group_by and group_by != 'none':
-                    self.group_by = group_by
+                if self.view_type == 'pivot':
+                    # Parser le format "row: xxx\ncol: yyy"
+                    row_match = re.search(r'row\s*:\s*(\S+)', response, re.IGNORECASE)
+                    col_match = re.search(r'col\s*:\s*(\S+)', response, re.IGNORECASE)
+                    row_gb = row_match.group(1).strip().lower() if row_match else None
+                    col_gb = col_match.group(1).strip().lower() if col_match else None
+                    parts = [g for g in [row_gb, col_gb] if g and g != 'none']
+                    if parts:
+                        self.group_by = ', '.join(parts)
+                else:
+                    # Nettoyer la réponse (graphique simple)
+                    group_by = response.split('\n')[0].strip().strip('`').strip().lower()
+                    if group_by and group_by != 'none':
+                        self.group_by = group_by
 
-        _logger.info("Recherche générale [%s] modèle=%s domaine=%s nb=%s view_type=%s group_by=%s",
-                     self.name, model_name, self.domain, count, self.view_type, self.group_by)
+        _logger.info("Recherche générale [%s] modèle=%s domaine=%s nb=%s view_type=%s group_by=%s measure=%s",
+                     self.name, model_name, self.domain, count, self.view_type, self.group_by, self.measure)
 
         if count == 0:
             return {
@@ -401,8 +519,8 @@ class IsSearchGeneral(models.Model):
                 'target': 'current',
             }
 
-        # Étape 5 : Ouvrir la vue appropriée avec le domaine calculé
-        return self._open_result_list(model_name, self.domain, self.view_type, self.group_by)
+        # Étape 6 : Ouvrir la vue appropriée avec le domaine calculé
+        return self._open_result_list(model_name, self.domain, self.view_type, self.group_by, self.measure)
 
     def action_open_results(self):
         """Ré-ouvre les résultats avec le domaine déjà calculé."""
@@ -416,7 +534,7 @@ class IsSearchGeneral(models.Model):
 
         # Utiliser le view_type enregistré, ou list par défaut
         view_type = self.view_type or 'list'
-        return self._open_result_list(self.model_name, self.domain, view_type, self.group_by)
+        return self._open_result_list(self.model_name, self.domain, view_type, self.group_by, self.measure)
 
     def action_recalculate_domain(self):
         """Recalcule le domaine et le group_by en conservant le modèle identifié."""
@@ -457,6 +575,7 @@ class IsSearchGeneral(models.Model):
             if result['success']:
                 response = result['response'].strip()
                 self.vllm_group_by_response = response
+                # Nettoyer la réponse
                 group_by = response.split('\n')[0].strip().strip('`').strip().lower()
                 if group_by and group_by != 'none':
                     self.group_by = group_by
@@ -471,6 +590,7 @@ class IsSearchGeneral(models.Model):
         _logger.info("Domaine recalculé [%s] domaine=%s nb=%s group_by=%s",
                      self.name, self.domain, count, self.group_by)
 
+        # Retourner une action pour recharger le formulaire et afficher les changements
         return {
             'type': 'ir.actions.act_window',
             'res_model': 'is.search.general',
@@ -488,29 +608,23 @@ class IsSearchGeneral(models.Model):
         if not self.model_name or not self.domain:
             raise UserError("Lancez d'abord une recherche.")
 
-        # Chercher l'action principale du modèle pour l'associer au filtre
-        action = self.env['ir.actions.act_window'].sudo().search([
-            ('res_model', '=', self.model_name),
-            ('view_mode', 'ilike', 'list'),
-        ], limit=1)
-
         filter_vals = {
             'name': self.question[:80] if self.question else 'Recherche générale',
             'model_id': self.model_name,
             'domain': self.domain,
-            'user_id': self.env.uid,
-            'action_id': action.id if action else False,
+            'user_ids': [(6, 0, [self.env.uid])],  # v19 : user_id => user_ids (favori personnel)
+            'action_id': False,
             'is_default': False,
         }
 
         if self.filter_id:
             # Mettre à jour le filtre existant
-            self.filter_id.write(filter_vals)
+            self.filter_id.sudo().write(filter_vals)
             message = 'Le favori a été mis à jour.'
             title = 'Favori mis à jour'
         else:
             # Créer un nouveau filtre
-            new_filter = self.env['ir.filters'].create(filter_vals)
+            new_filter = self.env['ir.filters'].sudo().create(filter_vals)
             self.filter_id = new_filter.id
             message = 'Le filtre a été ajouté à vos favoris.'
             title = 'Favori enregistré'
@@ -548,7 +662,35 @@ class IsSearchGeneral(models.Model):
         except Exception:
             return 0
 
-    def _open_result_list(self, model_name, domain_str, view_type='list', group_by=None):
+    def _validate_group_by(self, model_name, gb_list):
+        """Filtre la liste group_by : supprime les champs inexistants et retire la granularité sur les non-dates."""
+        DATE_TYPES = ('date', 'datetime')
+        try:
+            model_obj = self.env[model_name]
+        except KeyError:
+            return gb_list
+        result = []
+        for gb in gb_list:
+            if ':' in gb:
+                fname = gb.split(':', 1)[0]
+                field = model_obj._fields.get(fname)
+                if field is None:
+                    _logger.warning("group_by: champ '%s' inexistant sur %s, ignoré", fname, model_name)
+                    continue
+                if field.type not in DATE_TYPES:
+                    _logger.warning("group_by: '%s' n'est pas date/datetime sur %s, granularité supprimée", fname, model_name)
+                    result.append(fname)
+                else:
+                    result.append(gb)
+            else:
+                field = model_obj._fields.get(gb)
+                if field is None:
+                    _logger.warning("group_by: champ '%s' inexistant sur %s, ignoré", gb, model_name)
+                    continue
+                result.append(gb)
+        return result
+
+    def _open_result_list(self, model_name, domain_str, view_type='list', group_by=None, measure=None):
         """Ouvre la vue du modèle avec le domaine donné et le type de vue approprié."""
         try:
             domain = safe_eval(domain_str, {
@@ -563,7 +705,7 @@ class IsSearchGeneral(models.Model):
             view_mode = 'graph,list,form'
         elif view_type == 'pivot':
             view_mode = 'pivot,list,form'
-        else:
+        else:  # list par défaut
             view_mode = 'list,form'
 
         action = {
@@ -575,11 +717,24 @@ class IsSearchGeneral(models.Model):
             'target': 'current',
         }
 
-        # Pour les vues pivot et graph, ajouter un contexte avec le group_by
+        # Pour les vues pivot et graph, ajouter un contexte avec le group_by et la mesure
         if view_type in ('graph', 'pivot'):
             context = {}
             if group_by:
-                context['group_by'] = [group_by]
+                gb_list = group_by if isinstance(group_by, list) else [g.strip() for g in group_by.split(',') if g.strip()]
+                gb_list = self._validate_group_by(model_name, gb_list)
+                if view_type == 'pivot' and len(gb_list) >= 2:
+                    context['pivot_row_groupby'] = [gb_list[0]]
+                    context['pivot_column_groupby'] = [gb_list[1]]
+                elif view_type == 'pivot' and len(gb_list) == 1:
+                    context['pivot_row_groupby'] = [gb_list[0]]
+                else:
+                    context['group_by'] = gb_list
+            if measure:
+                if view_type == 'pivot':
+                    context['pivot_measures'] = [measure]
+                else:
+                    context['graph_measure'] = measure
             action['context'] = context
 
         return action

@@ -1,8 +1,8 @@
-# is_llm2odoo — Recherche intelligente par IA pour Odoo 18
+# is_llm2odoo — Recherche intelligente par IA pour Odoo 20
 
 ## Description
 
-Ce module Odoo 18 intègre un serveur VLLM (compatible API OpenAI) pour offrir une **recherche en langage naturel** dans Odoo. L'utilisateur décrit sa recherche en français (ex : *"Liste des factures de ce mois"*) et le module utilise l'IA pour :
+Ce module Odoo 20 intègre un serveur VLLM (compatible API OpenAI) pour offrir une **recherche en langage naturel** dans Odoo. L'utilisateur décrit sa recherche en français (ex : *"Liste des factures de ce mois"*) et le module utilise l'IA pour :
 
 1. **Identifier automatiquement le modèle Odoo** concerné (factures, commandes, contacts…)
 2. **Générer un domaine de filtre Odoo** à partir de la question
@@ -64,9 +64,9 @@ Deux groupes d'utilisateurs :
 ## Installation
 
 ```bash
-git clone -b 18.0 --single-branch https://github.com/tonygalmiche/is_llm2odoo.git
+git clone -b 20.0 --single-branch https://github.com/tonygalmiche/is_llm2odoo.git
 ```
 
 ## Licence
 
-LGPL-3
+AGPL-3

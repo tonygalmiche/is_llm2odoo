@@ -40,17 +40,17 @@
                                     <span t-if="record.view_type.raw_value == 'graph'"
                                           class="badge rounded-pill"
                                           style="background-color: #17a2b8; color: white; font-weight: bold;">
-                                        <i class="fa fa-bar-chart" title="Voir le graphique"/>
+                                        <i class="oi" data-icon="bar_chart" title="Voir le graphique"/>
                                     </span>
                                     <span t-elif="record.view_type.raw_value == 'pivot'"
                                           class="badge rounded-pill"
                                           style="background-color: #28a745; color: white; font-weight: bold;">
-                                        <i class="fa fa-table" title="Voir le tableau croisé"/>
+                                        <i class="oi" data-icon="table_chart" title="Voir le tableau croisé"/>
                                     </span>
                                     <span t-else=""
                                           class="badge rounded-pill"
                                           style="background-color: #6c757d; color: white; font-weight: bold;">
-                                        <i class="fa fa-list" title="Voir la liste"/>
+                                        <i class="oi" data-icon="format_list_bulleted" title="Voir la liste"/>
                                     </span>
                                 </button>
                             </div>
@@ -114,21 +114,21 @@
                             type="object"
                             string="Actualiser la recherche"
                             class="oe_highlight"
-                            icon="fa-search"/>
+                            icon="search"/>
                     <button name="action_open_results"
                             type="object"
                             string="Voir le résultat"
-                            icon="fa-list"
+                            icon="format_list_bulleted"
                             invisible="not domain"/>
                     <button name="action_save_as_filter"
                             type="object"
                             string="Enregistrer comme favori"
-                            icon="fa-star"
+                            icon="star"
                             invisible="not domain or filter_id"/>
                     <button name="action_save_as_filter"
                             type="object"
                             string="Mettre à jour le favori"
-                            icon="fa-star"
+                            icon="star"
                             invisible="not domain or not filter_id"/>
                 </header>
                 <sheet>
@@ -159,6 +159,9 @@
                                 <field name="group_by"
                                     placeholder="Ex: create_date:year, partner_id..."
                                     invisible="view_type not in ('graph', 'pivot')"/>
+                                <field name="measure"
+                                    placeholder="Ex: amount_total, __count..."
+                                    invisible="view_type not in ('graph', 'pivot')"/>
                             </group>
                         </page>
                         <page string="Détails techniques" name="technical">
@@ -175,6 +178,9 @@
                                     <field name="group_by"
                                            placeholder="Ex: create_date:year, partner_id..."
                                            invisible="view_type not in ('graph', 'pivot')"/>
+                                    <field name="measure"
+                                           placeholder="Ex: amount_total, __count..."
+                                           invisible="view_type not in ('graph', 'pivot')"/>
                                 </group>
                                 <group>
                                     <field name="temps_reponse"/>
@@ -185,6 +191,7 @@
                                 <field name="vllm_domain_response" invisible="not vllm_domain_response"/>
                                 <field name="vllm_view_type_response" invisible="not vllm_view_type_response"/>
                                 <field name="vllm_group_by_response" invisible="not vllm_group_by_response"/>
+                                <field name="vllm_measure_response" invisible="not vllm_measure_response"/>
                             </group>
                         </page>
                     </notebook>
